@@ -85,40 +85,36 @@ private static Double tryParseDouble(String str) {
 }
 
 private static String tryParseString(String str) {
-    return str.length() == 0 ? null : str;
+    return "".equals(str) ? null : str;
 }
 
 private static <T extends Enum<T>> T tryParseEnum(Class<T> enumType, String str) {
     try {
-        return Enum.valueOf(enumType, str);
+        return Enum.valueOf(enumType, str.toUpperCase());
     } catch (IllegalArgumentException e) {
         return null;
     }
 }
 
 private static <T> List<T> tryParseList(Function<String, T> elementParser, String str) {
+    if ("".equals(str)) return new ArrayList<>();
+
     List<T> ret = new ArrayList<>();
 
     for (String element : str.split(",")) {
-        T parsed = elementParser.apply(element);
-        if (parsed == null) {
-            return null;
-        }
-        ret.add(parsed);
+        ret.add(elementParser.apply(element));
     }
 
     return ret;
 }
 
 private static <T extends Enum<T>> List<T> tryParseEnumList(Class<T> enumType, String str) {
+    if ("".equals(str)) return new ArrayList<>();
+
     List<T> ret = new ArrayList<>();
 
     for (String element : str.split(",")) {
-        T parsed = tryParseEnum(enumType, element);
-        if (parsed == null) {
-            return null;
-        }
-        ret.add(parsed);
+        ret.add(tryParseEnum(enumType, element));
     }
 
     return ret;
@@ -128,7 +124,17 @@ private static <T> String formatList(List<T> list) {
     StringJoiner joiner = new StringJoiner(",");
 
     for (T element : list) {
-        joiner.add(element.toString());
+        joiner.add(element == null ? "" : element.toString());
+    }
+
+    return joiner.toString();
+}
+
+private static <T extends Enum<T>> String formatEnumList(List<T> list, Function<T, String> elementFormatter) {
+    StringJoiner joiner = new StringJoiner(",");
+
+    for (T element : list) {
+        joiner.add(element == null ? "" : elementFormatter.apply(element));
     }
 
     return joiner.toString();
@@ -142,7 +148,8 @@ std::string GetJavaTypeName(const sysprop::Property& prop);
 std::string GetJavaEnumTypeName(const sysprop::Property& prop);
 std::string GetJavaPackageName(const sysprop::Properties& props);
 std::string GetJavaClassName(const sysprop::Properties& props);
-bool IsListProp(const sysprop::Property& prop);
+std::string GetParsingExpression(const sysprop::Property& prop);
+std::string GetFormattingExpression(const sysprop::Property& prop);
 void WriteJavaAnnotation(CodeWriter& writer, sysprop::Scope scope);
 bool GenerateJavaClass(const sysprop::Properties& props,
                        std::string* java_result, std::string* err);
@@ -231,6 +238,19 @@ std::string GetParsingExpression(const sysprop::Property& prop) {
   return "tryParseList(" + element_parser + ", value)";
 }
 
+std::string GetFormattingExpression(const sysprop::Property& prop) {
+  if (prop.type() == sysprop::Enum) {
+    return "value.getPropValue()";
+  } else if (prop.type() == sysprop::EnumList) {
+    return "formatEnumList(value, " + GetJavaEnumTypeName(prop) +
+           "::getPropValue)";
+  } else if (IsListProp(prop)) {
+    return "formatList(value)";
+  } else {
+    return "value.toString()";
+  }
+}
+
 std::string GetJavaPackageName(const sysprop::Properties& props) {
   const std::string& module = props.module();
   return module.substr(0, module.rfind('.'));
@@ -241,23 +261,10 @@ std::string GetJavaClassName(const sysprop::Properties& props) {
   return module.substr(module.rfind('.') + 1);
 }
 
-bool IsListProp(const sysprop::Property& prop) {
-  switch (prop.type()) {
-    case sysprop::BooleanList:
-    case sysprop::IntegerList:
-    case sysprop::LongList:
-    case sysprop::DoubleList:
-    case sysprop::StringList:
-    case sysprop::EnumList:
-      return true;
-    default:
-      return false;
-  }
-}
-
 void WriteJavaAnnotation(CodeWriter& writer, sysprop::Scope scope) {
   switch (scope) {
     case sysprop::System:
+      writer.Write("/** @hide */\n");
       writer.Write("@SystemApi\n");
       break;
     case sysprop::Internal:
@@ -308,10 +315,31 @@ bool GenerateJavaClass(const sysprop::Properties& props,
       writer.Write("public static enum %s {\n",
                    GetJavaEnumTypeName(prop).c_str());
       writer.Indent();
-      for (const std::string& name :
-           android::base::Split(prop.enum_values(), "|")) {
-        writer.Write("%s,\n", name.c_str());
+      std::vector<std::string> values =
+          android::base::Split(prop.enum_values(), "|");
+      for (int i = 0; i < values.size(); ++i) {
+        const std::string& name = values[i];
+        writer.Write("%s(\"%s\")", ToUpper(name).c_str(), name.c_str());
+        if (i + 1 < values.size()) {
+          writer.Write(",\n");
+        } else {
+          writer.Write(";\n");
+        }
       }
+      writer.Write(
+          "private final String propValue;\n"
+          "private %s(String propValue) {\n",
+          GetJavaEnumTypeName(prop).c_str());
+      writer.Indent();
+      writer.Write("this.propValue = propValue;\n");
+      writer.Dedent();
+      writer.Write(
+          "}\n"
+          "public String getPropValue() {\n");
+      writer.Indent();
+      writer.Write("return propValue;\n");
+      writer.Dedent();
+      writer.Write("}\n");
       writer.Dedent();
       writer.Write("}\n\n");
     }
@@ -320,15 +348,26 @@ bool GenerateJavaClass(const sysprop::Properties& props,
       WriteJavaAnnotation(writer, prop.scope());
     }
 
-    writer.Write("public static Optional<%s> %s() {\n", prop_type.c_str(),
-                 prop_id.c_str());
-    writer.Indent();
-    writer.Write("String value = SystemProperties.get(\"%s\");\n",
-                 prop.prop_name().c_str());
-    writer.Write("return Optional.ofNullable(%s);\n",
-                 GetParsingExpression(prop).c_str());
-    writer.Dedent();
-    writer.Write("}\n");
+    if (IsListProp(prop)) {
+      writer.Write("public static %s %s() {\n", prop_type.c_str(),
+                   prop_id.c_str());
+      writer.Indent();
+      writer.Write("String value = SystemProperties.get(\"%s\");\n",
+                   prop.prop_name().c_str());
+      writer.Write("return %s;\n", GetParsingExpression(prop).c_str());
+      writer.Dedent();
+      writer.Write("}\n");
+    } else {
+      writer.Write("public static Optional<%s> %s() {\n", prop_type.c_str(),
+                   prop_id.c_str());
+      writer.Indent();
+      writer.Write("String value = SystemProperties.get(\"%s\");\n",
+                   prop.prop_name().c_str());
+      writer.Write("return Optional.ofNullable(%s);\n",
+                   GetParsingExpression(prop).c_str());
+      writer.Dedent();
+      writer.Write("}\n");
+    }
 
     if (prop.access() != sysprop::Readonly) {
       writer.Write("\n");
@@ -340,7 +379,7 @@ bool GenerateJavaClass(const sysprop::Properties& props,
       writer.Indent();
       writer.Write("SystemProperties.set(\"%s\", value == null ? \"\" : %s);\n",
                    prop.prop_name().c_str(),
-                   IsListProp(prop) ? "formatList(value)" : "value.toString()");
+                   GetFormattingExpression(prop).c_str());
       writer.Dedent();
       writer.Write("}\n");
     }
