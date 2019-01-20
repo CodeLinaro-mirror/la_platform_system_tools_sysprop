@@ -156,40 +156,36 @@ public final class TestProperties {
     }
 
     private static String tryParseString(String str) {
-        return str.length() == 0 ? null : str;
+        return "".equals(str) ? null : str;
     }
 
     private static <T extends Enum<T>> T tryParseEnum(Class<T> enumType, String str) {
         try {
-            return Enum.valueOf(enumType, str);
+            return Enum.valueOf(enumType, str.toUpperCase());
         } catch (IllegalArgumentException e) {
             return null;
         }
     }
 
     private static <T> List<T> tryParseList(Function<String, T> elementParser, String str) {
+        if ("".equals(str)) return new ArrayList<>();
+
         List<T> ret = new ArrayList<>();
 
         for (String element : str.split(",")) {
-            T parsed = elementParser.apply(element);
-            if (parsed == null) {
-                return null;
-            }
-            ret.add(parsed);
+            ret.add(elementParser.apply(element));
         }
 
         return ret;
     }
 
     private static <T extends Enum<T>> List<T> tryParseEnumList(Class<T> enumType, String str) {
+        if ("".equals(str)) return new ArrayList<>();
+
         List<T> ret = new ArrayList<>();
 
         for (String element : str.split(",")) {
-            T parsed = tryParseEnum(enumType, element);
-            if (parsed == null) {
-                return null;
-            }
-            ret.add(parsed);
+            ret.add(tryParseEnum(enumType, element));
         }
 
         return ret;
@@ -199,7 +195,17 @@ public final class TestProperties {
         StringJoiner joiner = new StringJoiner(",");
 
         for (T element : list) {
-            joiner.add(element.toString());
+            joiner.add(element == null ? "" : element.toString());
+        }
+
+        return joiner.toString();
+    }
+
+    private static <T extends Enum<T>> String formatEnumList(List<T> list, Function<T, String> elementFormatter) {
+        StringJoiner joiner = new StringJoiner(",");
+
+        for (T element : list) {
+            joiner.add(element == null ? "" : elementFormatter.apply(element));
         }
 
         return joiner.toString();
@@ -226,6 +232,7 @@ public final class TestProperties {
         SystemProperties.set("vendor.test_int", value == null ? "" : value.toString());
     }
 
+    /** @hide */
     @SystemApi
     public static Optional<String> test_string() {
         String value = SystemProperties.get("vendor.test.string");
@@ -239,13 +246,20 @@ public final class TestProperties {
 
     /** @hide */
     public static enum test_enum_values {
-        a,
-        b,
-        c,
-        D,
-        e,
-        f,
-        G,
+        A("a"),
+        B("b"),
+        C("c"),
+        D("D"),
+        E("e"),
+        F("f"),
+        G("G");
+        private final String propValue;
+        private test_enum_values(String propValue) {
+            this.propValue = propValue;
+        }
+        public String getPropValue() {
+            return propValue;
+        }
     }
 
     /** @hide */
@@ -256,7 +270,7 @@ public final class TestProperties {
 
     /** @hide */
     public static void test_enum(test_enum_values value) {
-        SystemProperties.set("vendor.test.enum", value == null ? "" : value.toString());
+        SystemProperties.set("vendor.test.enum", value == null ? "" : value.getPropValue());
     }
 
     public static Optional<Boolean> test_BOOLeaN() {
@@ -269,6 +283,7 @@ public final class TestProperties {
         SystemProperties.set("ro.vendor.test.b", value == null ? "" : value.toString());
     }
 
+    /** @hide */
     @SystemApi
     public static Optional<Long> vendor_os_test_long() {
         String value = SystemProperties.get("vendor.vendor.os_test-long");
@@ -281,9 +296,9 @@ public final class TestProperties {
     }
 
     /** @hide */
-    public static Optional<List<Double>> test_double_list() {
+    public static List<Double> test_double_list() {
         String value = SystemProperties.get("vendor.test_double_list");
-        return Optional.ofNullable(tryParseList(v -> tryParseDouble(v), value));
+        return tryParseList(v -> tryParseDouble(v), value);
     }
 
     /** @hide */
@@ -291,9 +306,9 @@ public final class TestProperties {
         SystemProperties.set("vendor.test_double_list", value == null ? "" : formatList(value));
     }
 
-    public static Optional<List<Integer>> test_list_int() {
+    public static List<Integer> test_list_int() {
         String value = SystemProperties.get("vendor.test_list_int");
-        return Optional.ofNullable(tryParseList(v -> tryParseInteger(v), value));
+        return tryParseList(v -> tryParseInteger(v), value);
     }
 
     /** @hide */
@@ -301,10 +316,11 @@ public final class TestProperties {
         SystemProperties.set("vendor.test_list_int", value == null ? "" : formatList(value));
     }
 
+    /** @hide */
     @SystemApi
-    public static Optional<List<String>> test_strlist() {
+    public static List<String> test_strlist() {
         String value = SystemProperties.get("vendor.test.strlist");
-        return Optional.ofNullable(tryParseList(v -> tryParseString(v), value));
+        return tryParseList(v -> tryParseString(v), value);
     }
 
     /** @hide */
@@ -314,20 +330,27 @@ public final class TestProperties {
 
     /** @hide */
     public static enum el_values {
-        enu,
-        mva,
-        lue,
+        ENU("enu"),
+        MVA("mva"),
+        LUE("lue");
+        private final String propValue;
+        private el_values(String propValue) {
+            this.propValue = propValue;
+        }
+        public String getPropValue() {
+            return propValue;
+        }
     }
 
     /** @hide */
-    public static Optional<List<el_values>> el() {
+    public static List<el_values> el() {
         String value = SystemProperties.get("vendor.el");
-        return Optional.ofNullable(tryParseEnumList(el_values.class, value));
+        return tryParseEnumList(el_values.class, value);
     }
 
     /** @hide */
     public static void el(List<el_values> value) {
-        SystemProperties.set("vendor.el", value == null ? "" : formatList(value));
+        SystemProperties.set("vendor.el", value == null ? "" : formatEnumList(value, el_values::getPropValue));
     }
 }
 )";

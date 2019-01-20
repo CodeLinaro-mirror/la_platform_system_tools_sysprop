@@ -116,7 +116,7 @@ bool ValidateProp(const sysprop::Properties& props,
 
     std::unordered_set<std::string> name_set;
     for (const std::string& name : names) {
-      if (!name_set.insert(name).second) {
+      if (!name_set.insert(ToUpper(name)).second) {
         if (err)
           *err = "Duplicated enum value \"" + name + "\" for API \"" +
                  prop.api_name() + "\"";
@@ -177,6 +177,11 @@ bool ValidateProp(const sysprop::Properties& props,
       }
       break;
     default:
+      /*
+       * TODO: Some properties don't have prefix "ro." but not written in any
+       * Java or C++ codes. They might be misnamed and should be readonly. Will
+       * uncomment this check after fixing them all / or making a whitelist for
+       * them
       if (!android::base::StartsWith(prop_name, "ro.")) {
         if (err) {
           *err = "Prop \"" + prop_name +
@@ -184,6 +189,7 @@ bool ValidateProp(const sysprop::Properties& props,
         }
         return false;
       }
+      */
       break;
   }
 
@@ -258,6 +264,20 @@ bool IsDirectory(const std::string& path) {
   return S_ISDIR(st.st_mode);
 }
 
+bool IsListProp(const sysprop::Property& prop) {
+  switch (prop.type()) {
+    case sysprop::BooleanList:
+    case sysprop::IntegerList:
+    case sysprop::LongList:
+    case sysprop::DoubleList:
+    case sysprop::StringList:
+    case sysprop::EnumList:
+      return true;
+    default:
+      return false;
+  }
+}
+
 std::string GetModuleName(const sysprop::Properties& props) {
   const std::string& module = props.module();
   return module.substr(module.rfind('.') + 1);
@@ -289,6 +309,13 @@ bool ParseProps(const std::string& input_file_path, sysprop::Properties* props,
   }
 
   return true;
+}
+
+std::string ToUpper(std::string str) {
+  for (char& ch : str) {
+    ch = toupper(ch);
+  }
+  return str;
 }
 
 std::string ApiNameToIdentifier(const std::string& name) {
