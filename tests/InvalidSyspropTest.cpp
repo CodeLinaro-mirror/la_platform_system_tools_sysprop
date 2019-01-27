@@ -81,7 +81,7 @@ module: "vendor.module.name"
 prop {
     api_name: "status"
     type: Enum
-    enum_values: "on|off|intermediate|on"
+    enum_values: "oN|off|intermediate|On"
     scope: Public
     access: ReadWrite
 }
@@ -124,6 +124,11 @@ prop {
 }
 )";
 
+/*
+ * TODO: Some properties don't have prefix "ro." but not written in any
+ * Java or C++ codes. They might be misnamed and should be readonly. Will
+ * uncomment this check after fixing them all / or making a whitelist for
+ * them
 constexpr const char* kNoRoPrefixForReadonlyProperty =
     R"(
 owner: Odm
@@ -136,13 +141,14 @@ prop {
     access: Readonly
 }
 )";
+*/
 
 constexpr const char* kTestCasesAndExpectedErrors[][2] = {
     {kDuplicatedField, "Duplicated API name \"dup\""},
     {kEmptyProp, "There is no defined property"},
     {kInvalidApiName, "Invalid API name \"!@#$\""},
     {kEmptyEnumValues, "Invalid enum value \"\" for API \"empty_enum_value\""},
-    {kDuplicatedEnumValue, "Duplicated enum value \"on\" for API \"status\""},
+    {kDuplicatedEnumValue, "Duplicated enum value \"On\" for API \"status\""},
     {kInvalidModuleName, "Invalid module name \"\""},
     {kInvalidNamespaceForPlatform,
      "Prop \"vendor.build.utc_long\" owned by platform cannot have vendor. or "
@@ -151,9 +157,9 @@ constexpr const char* kTestCasesAndExpectedErrors[][2] = {
     {kRoPrefixForReadWriteProperty,
      "Prop \"ro.vendor.i_am_readwrite\" is ReadWrite and also have prefix "
      "\"ro.\""},
-    {kNoRoPrefixForReadonlyProperty,
-     "Prop \"odm.i_am_readwrite\" isn't ReadWrite, but don't have prefix "
-     "\"ro.\""},
+    /*    {kNoRoPrefixForReadonlyProperty,
+         "Prop \"odm.i_am_readwrite\" isn't ReadWrite, but don't have prefix "
+         "\"ro.\""},*/
 };
 
 }  // namespace
