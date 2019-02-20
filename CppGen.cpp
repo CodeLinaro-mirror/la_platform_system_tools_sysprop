@@ -179,21 +179,14 @@ T GetProp(const char* key) {
 const std::regex kRegexDot{"\\."};
 const std::regex kRegexUnderscore{"_"};
 
-std::string GetHeaderIncludeGuardName(const sysprop::Properties& props);
 std::string GetCppEnumName(const sysprop::Property& prop);
 std::string GetCppPropTypeName(const sysprop::Property& prop);
 std::string GetCppNamespace(const sysprop::Properties& props);
 
-bool GenerateHeader(const sysprop::Properties& props,
-                    std::string* header_result, std::string* err);
-bool GenerateSource(const sysprop::Properties& props,
-                    const std::string& include_name, std::string* source_result,
-                    std::string* err);
-
-std::string GetHeaderIncludeGuardName(const sysprop::Properties& props) {
-  return "SYSPROPGEN_" + std::regex_replace(props.module(), kRegexDot, "_") +
-         "_H_";
-}
+std::string GenerateHeader(const sysprop::Properties& props,
+                           sysprop::Scope scope);
+std::string GenerateSource(const sysprop::Properties& props,
+                           const std::string& include_name);
 
 std::string GetCppEnumName(const sysprop::Property& prop) {
   return ApiNameToIdentifier(prop.api_name()) + "_values";
@@ -234,24 +227,32 @@ std::string GetCppNamespace(const sysprop::Properties& props) {
   return std::regex_replace(props.module(), kRegexDot, "::");
 }
 
-bool GenerateHeader(const sysprop::Properties& props, std::string* header_result,
-                    [[maybe_unused]] std::string* err) {
+std::string GenerateHeader(const sysprop::Properties& props,
+                           sysprop::Scope scope) {
   CodeWriter writer(kIndent);
 
   writer.Write("%s", kGeneratedFileFooterComments);
 
-  std::string include_guard_name = GetHeaderIncludeGuardName(props);
-  writer.Write("#ifndef %s\n#define %s\n\n", include_guard_name.c_str(),
-               include_guard_name.c_str());
+  writer.Write("#pragma once\n\n");
   writer.Write("%s", kCppHeaderIncludes);
 
   std::string cpp_namespace = GetCppNamespace(props);
   writer.Write("namespace %s {\n\n", cpp_namespace.c_str());
 
-  for (int i = 0; i < props.prop_size(); ++i) {
-    if (i > 0) writer.Write("\n");
+  bool first = true;
 
+  for (int i = 0; i < props.prop_size(); ++i) {
     const sysprop::Property& prop = props.prop(i);
+
+    // Scope: Internal > System > Public
+    if (prop.scope() > scope) continue;
+
+    if (!first) {
+      writer.Write("\n");
+    } else {
+      first = false;
+    }
+
     std::string prop_id = ApiNameToIdentifier(prop.api_name());
     std::string prop_type = GetCppPropTypeName(prop);
 
@@ -267,23 +268,19 @@ bool GenerateHeader(const sysprop::Properties& props, std::string* header_result
     }
 
     writer.Write("%s %s();\n", prop_type.c_str(), prop_id.c_str());
-    if (prop.access() != sysprop::Readonly) {
+    if (prop.access() != sysprop::Readonly && scope == sysprop::Internal) {
       writer.Write("bool %s(const %s& value);\n", prop_id.c_str(),
                    prop_type.c_str());
     }
   }
 
-  writer.Write("\n}  // namespace %s\n\n", cpp_namespace.c_str());
+  writer.Write("\n}  // namespace %s\n", cpp_namespace.c_str());
 
-  writer.Write("#endif  // %s\n", include_guard_name.c_str());
-
-  *header_result = writer.Code();
-  return true;
+  return writer.Code();
 }
 
-bool GenerateSource(const sysprop::Properties& props,
-                    const std::string& include_name, std::string* source_result,
-                    [[maybe_unused]] std::string* err) {
+std::string GenerateSource(const sysprop::Properties& props,
+                           const std::string& include_name) {
   CodeWriter writer(kIndent);
   writer.Write("%s", kGeneratedFileFooterComments);
   writer.Write("#include <%s>\n\n", include_name.c_str());
@@ -393,15 +390,14 @@ bool GenerateSource(const sysprop::Properties& props,
 
   writer.Write("\n}  // namespace %s\n", cpp_namespace.c_str());
 
-  *source_result = writer.Code();
-
-  return true;
+  return writer.Code();
 }
 
 }  // namespace
 
 bool GenerateCppFiles(const std::string& input_file_path,
-                      const std::string& header_output_dir,
+                      const std::string& header_dir,
+                      const std::string& system_header_dir,
                       const std::string& source_output_dir,
                       const std::string& include_name, std::string* err) {
   sysprop::Properties props;
@@ -410,38 +406,29 @@ bool GenerateCppFiles(const std::string& input_file_path,
     return false;
   }
 
-  std::string header_result, source_result;
-
-  if (!GenerateHeader(props, &header_result, err)) {
-    return false;
-  }
-
-  if (!GenerateSource(props, include_name, &source_result, err)) {
-    return false;
-  }
-
   std::string output_basename = android::base::Basename(input_file_path);
 
-  std::string header_path = header_output_dir + "/" + output_basename + ".h";
+  for (auto&& [scope, dir] : {
+           std::pair(sysprop::Internal, header_dir),
+           std::pair(sysprop::System, system_header_dir),
+       }) {
+    if (!IsDirectory(dir) && !CreateDirectories(dir)) {
+      *err = "Creating directory to " + dir + " failed: " + strerror(errno);
+      return false;
+    }
+
+    std::string path = dir + "/" + output_basename + ".h";
+    std::string result = GenerateHeader(props, scope);
+
+    if (!android::base::WriteStringToFile(result, path)) {
+      *err =
+          "Writing generated header to " + path + " failed: " + strerror(errno);
+      return false;
+    }
+  }
+
   std::string source_path = source_output_dir + "/" + output_basename + ".cpp";
-
-  if (!IsDirectory(header_output_dir) && !CreateDirectories(header_output_dir)) {
-    *err = "Creating directory to " + header_output_dir +
-           " failed: " + strerror(errno);
-    return false;
-  }
-
-  if (!IsDirectory(source_output_dir) && !CreateDirectories(source_output_dir)) {
-    *err = "Creating directory to " + source_output_dir +
-           " failed: " + strerror(errno);
-    return false;
-  }
-
-  if (!android::base::WriteStringToFile(header_result, header_path)) {
-    *err = "Writing generated header to " + header_path +
-           " failed: " + strerror(errno);
-    return false;
-  }
+  std::string source_result = GenerateSource(props, include_name);
 
   if (!android::base::WriteStringToFile(source_result, source_path)) {
     *err = "Writing generated source to " + source_path +
