@@ -54,7 +54,18 @@ constexpr const char* kCppSourceIncludes =
 #include <utility>
 
 #include <strings.h>
+#ifdef __BIONIC__
 #include <sys/system_properties.h>
+[[maybe_unused]] static bool SetProp(const char* key, const char* value) {
+    return __system_property_set(key, value) == 0;
+}
+#else
+#include <android-base/properties.h>
+[[maybe_unused]] static bool SetProp(const char* key, const char* value) {
+    android::base::SetProperty(key, value);
+    return true;
+}
+#endif
 
 #include <android-base/parseint.h>
 #include <log/log.h>
@@ -183,15 +194,23 @@ template <typename T>
 }
 
 template <typename T>
-T GetProp(const char* key) {
-    T ret;
+T GetProp(const char* key, const char* legacy = nullptr) {
+    std::string value;
+#ifdef __BIONIC__
     auto pi = __system_property_find(key);
     if (pi != nullptr) {
         __system_property_read_callback(pi, [](void* cookie, const char*, const char* value, std::uint32_t) {
-            *static_cast<T*>(cookie) = TryParse<T>(value);
-        }, &ret);
+            *static_cast<std::string*>(cookie) = value;
+        }, &value);
     }
-    return ret;
+#else
+    value = android::base::GetProperty(key, "");
+#endif
+    if (value.empty() && legacy) {
+        ALOGD("prop %s doesn't exist; fallback to legacy prop %s", key, legacy);
+        return GetProp<T>(legacy);
+    }
+    return TryParse<T>(value.c_str());
 }
 
 )";
@@ -326,8 +345,7 @@ std::string GenerateSource(const sysprop::Properties& props,
     writer.Write("constexpr const std::pair<const char*, %s> %s_list[] = {\n",
                  enum_name.c_str(), prop_id.c_str());
     writer.Indent();
-    for (const std::string& name :
-         android::base::Split(prop.enum_values(), "|")) {
+    for (const std::string& name : ParseEnumValues(prop.enum_values())) {
       writer.Write("{\"%s\", %s::%s},\n", name.c_str(), enum_name.c_str(),
                    ToUpper(name).c_str());
     }
@@ -387,11 +405,18 @@ std::string GenerateSource(const sysprop::Properties& props,
     const sysprop::Property& prop = props.prop(i);
     std::string prop_id = ApiNameToIdentifier(prop.api_name());
     std::string prop_type = GetCppPropTypeName(prop);
+    std::string prop_name = prop.prop_name();
+    std::string legacy_name = prop.legacy_prop_name();
 
     writer.Write("%s %s() {\n", prop_type.c_str(), prop_id.c_str());
     writer.Indent();
-    writer.Write("return GetProp<%s>(\"%s\");\n", prop_type.c_str(),
-                 prop.prop_name().c_str());
+    if (legacy_name.empty()) {
+      writer.Write("return GetProp<%s>(\"%s\");\n", prop_type.c_str(),
+                   prop_name.c_str());
+    } else {
+      writer.Write("return GetProp<%s>(\"%s\", \"%s\");\n", prop_type.c_str(),
+                   prop_name.c_str(), legacy_name.c_str());
+    }
     writer.Dedent();
     writer.Write("}\n");
 
@@ -417,7 +442,7 @@ std::string GenerateSource(const sysprop::Properties& props,
         }
       }
 
-      writer.Write("return __system_property_set(\"%s\", %s) == 0;\n",
+      writer.Write("return SetProp(\"%s\", %s) == 0;\n",
                    prop.prop_name().c_str(), format_expr);
       writer.Dedent();
       writer.Write("}\n");
