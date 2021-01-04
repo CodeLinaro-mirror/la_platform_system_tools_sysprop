@@ -310,9 +310,19 @@ template <> [[maybe_unused]] std::optional<std::int32_t> DoParse(const char* str
     return android::base::ParseInt(str, &ret) ? std::make_optional(ret) : std::nullopt;
 }
 
+template <> [[maybe_unused]] std::optional<std::uint32_t> DoParse(const char* str) {
+    std::uint32_t ret;
+    return android::base::ParseUint(str, &ret) ? std::make_optional(ret) : std::nullopt;
+}
+
 template <> [[maybe_unused]] std::optional<std::int64_t> DoParse(const char* str) {
     std::int64_t ret;
     return android::base::ParseInt(str, &ret) ? std::make_optional(ret) : std::nullopt;
+}
+
+template <> [[maybe_unused]] std::optional<std::uint64_t> DoParse(const char* str) {
+    std::uint64_t ret;
+    return android::base::ParseUint(str, &ret) ? std::make_optional(ret) : std::nullopt;
 }
 
 template <> [[maybe_unused]] std::optional<double> DoParse(const char* str) {
@@ -366,7 +376,15 @@ template <typename T> inline T TryParse(const char* str) {
     return value ? std::to_string(*value) : "";
 }
 
+[[maybe_unused]] std::string FormatValue(const std::optional<std::uint32_t>& value) {
+    return value ? std::to_string(*value) : "";
+}
+
 [[maybe_unused]] std::string FormatValue(const std::optional<std::int64_t>& value) {
+    return value ? std::to_string(*value) : "";
+}
+
+[[maybe_unused]] std::string FormatValue(const std::optional<std::uint64_t>& value) {
     return value ? std::to_string(*value) : "";
 }
 
@@ -435,7 +453,7 @@ std::optional<double> test_double() {
 }
 
 bool test_double(const std::optional<double>& value) {
-    return SetProp("android.test_double", FormatValue(value).c_str()) == 0;
+    return SetProp("android.test_double", FormatValue(value).c_str());
 }
 
 std::optional<std::int32_t> test_int() {
@@ -443,7 +461,7 @@ std::optional<std::int32_t> test_int() {
 }
 
 bool test_int(const std::optional<std::int32_t>& value) {
-    return SetProp("android.test_int", FormatValue(value).c_str()) == 0;
+    return SetProp("android.test_int", FormatValue(value).c_str());
 }
 
 std::optional<std::string> test_string() {
@@ -455,7 +473,7 @@ std::optional<test_enum_values> test_enum() {
 }
 
 bool test_enum(const std::optional<test_enum_values>& value) {
-    return SetProp("android.test.enum", FormatValue(value).c_str()) == 0;
+    return SetProp("android.test.enum", FormatValue(value).c_str());
 }
 
 std::optional<bool> test_BOOLeaN() {
@@ -463,7 +481,7 @@ std::optional<bool> test_BOOLeaN() {
 }
 
 bool test_BOOLeaN(const std::optional<bool>& value) {
-    return SetProp("ro.android.test.b", FormatValue(value).c_str()) == 0;
+    return SetProp("ro.android.test.b", FormatValue(value).c_str());
 }
 
 std::optional<std::int64_t> android_os_test_long() {
@@ -471,7 +489,7 @@ std::optional<std::int64_t> android_os_test_long() {
 }
 
 bool android_os_test_long(const std::optional<std::int64_t>& value) {
-    return SetProp("android_os_test-long", FormatValue(value).c_str()) == 0;
+    return SetProp("android_os_test-long", FormatValue(value).c_str());
 }
 
 std::vector<std::optional<double>> test_double_list() {
@@ -479,7 +497,7 @@ std::vector<std::optional<double>> test_double_list() {
 }
 
 bool test_double_list(const std::vector<std::optional<double>>& value) {
-    return SetProp("test_double_list", FormatValue(value).c_str()) == 0;
+    return SetProp("test_double_list", FormatValue(value).c_str());
 }
 
 std::vector<std::optional<std::int32_t>> test_list_int() {
@@ -487,7 +505,7 @@ std::vector<std::optional<std::int32_t>> test_list_int() {
 }
 
 bool test_list_int(const std::vector<std::optional<std::int32_t>>& value) {
-    return SetProp("test_list_int", FormatValue(value).c_str()) == 0;
+    return SetProp("test_list_int", FormatValue(value).c_str());
 }
 
 std::vector<std::optional<std::string>> test_strlist() {
@@ -495,7 +513,7 @@ std::vector<std::optional<std::string>> test_strlist() {
 }
 
 bool test_strlist(const std::vector<std::optional<std::string>>& value) {
-    return SetProp("test_strlist", FormatValue(value).c_str()) == 0;
+    return SetProp("test_strlist", FormatValue(value).c_str());
 }
 
 std::vector<std::optional<el_values>> el() {
@@ -503,7 +521,7 @@ std::vector<std::optional<el_values>> el() {
 }
 
 bool el(const std::vector<std::optional<el_values>>& value) {
-    return SetProp("el", FormatValue(value).c_str()) == 0;
+    return SetProp("el", FormatValue(value).c_str());
 }
 
 }  // namespace android::sysprop::PlatformProperties
