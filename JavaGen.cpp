@@ -381,7 +381,7 @@ std::string GenerateJavaClass(const sysprop::Properties& props,
                    GetJavaEnumTypeName(prop).c_str());
       writer.Indent();
       std::vector<std::string> values = ParseEnumValues(prop.enum_values());
-      for (int i = 0; i < values.size(); ++i) {
+      for (std::size_t i = 0; i < values.size(); ++i) {
         const std::string& name = values[i];
         writer.Write("%s(\"%s\")", ToUpper(name).c_str(), name.c_str());
         if (i + 1 < values.size()) {
@@ -428,7 +428,7 @@ std::string GenerateJavaClass(const sysprop::Properties& props,
       writer.Write("if (\"\".equals(value)) {\n");
       writer.Indent();
       writer.Write(
-          "Log.d(\"%s\", \"prop %s doesn't exist; fallback to legacy prop "
+          "Log.v(\"%s\", \"prop %s doesn't exist; fallback to legacy prop "
           "%s\");\n",
           class_name.c_str(), prop.prop_name().c_str(),
           prop.legacy_prop_name().c_str());
